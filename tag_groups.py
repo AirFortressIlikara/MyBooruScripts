@@ -1,0 +1,1 @@
+view_angle = ["dutch angle", "from above", "from behind", "from below", "from side", "multiple views", "sideways", "straight-on", "three quarter view", "upside-down"]
