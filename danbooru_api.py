@@ -10,8 +10,8 @@ from lib.eagle_api import EagleAPI
 from lib.synap_forest_api import SynapForestAPI
 
 # 初始化API客户端
-backend = EagleAPI()
-# backend = SynapForestAPI()
+# backend = EagleAPI()
+backend = SynapForestAPI()
 
 # 配置常量
 class Config:
@@ -35,21 +35,39 @@ RATING_MAP = {
 # 正则表达式模式，用于匹配我们感兴趣的标签
 COUNT_TAG_PATTERN = re.compile(r'^\d+(girls?|boys?|others?)$|^multiple_(girls?|boys?|others?)$|^solo$')
 
-def create_folder_if_valid(category: str, folder_type: str, 
-                         folder_name_to_id: Dict[str, int]) -> None:
+# 全局变量
+folder_id_to_name = {}
+folder_name_to_id = {}
+folder_to_root = {}
+
+def update_folder_mappings():
+    """更新全局文件夹映射"""
+    global folder_id_to_name, folder_name_to_id, folder_to_root
+    folder_id_to_name, folder_name_to_id, folder_to_root = backend.get_folder_list_recursive()
+
+def add_folder_mappings(name: str, id: str, root_id: str):
+    global folder_id_to_name, folder_name_to_id, folder_to_root
+    folder_name_to_id[name] = id
+    folder_id_to_name[id] = name
+    folder_to_root[id] = root_id
+
+def create_folder_if_valid(category: str, folder_type: str) -> None:
     """
     创建文件夹的辅助函数，如果文件夹类型和类别有效则创建
     :param category: 文件夹类别
     :param folder_type: 文件夹类型名称
-    :param folder_name_to_id: 文件夹名称到ID的映射字典
     """
+    global folder_name_to_id, folder_id_to_name, folder_to_root
+    
     if folder_type not in folder_name_to_id:
-        backend.create_folder(folder_name=folder_type)
+        new_id = backend.create_folder(folder_name=folder_type)
+        add_folder_mappings(folder_type, new_id, new_id)
 
     if category and category not in folder_name_to_id:
         folder_type_id = folder_name_to_id.get(folder_type)
         if folder_type_id is not None:
-            backend.create_folder(category, folder_type_id)
+            new_id = backend.create_folder(category, folder_type_id)
+            add_folder_mappings(category, new_id, folder_to_root[folder_type_id])
 
 def get_all_results(query: str, limit_per_page: int = Config.LIMIT_PER_PAGE, 
                     max_limit: int = Config.MAX_LIMIT) -> List[Dict]:
@@ -92,15 +110,15 @@ def process_tags(tag_string: str, pattern: re.Pattern = None) -> tuple:
         return matched, remaining
     return tags, []
 
-def get_folder_ids_for_post(post: Dict, folder_name_to_id: Dict[str, int], 
-                          search_query: str) -> List[Optional[int]]:
+def get_folder_ids_for_post(post: Dict, search_query: str) -> List[Optional[int]]:
     """
     获取帖子对应的所有文件夹ID
     :param post: 帖子数据
-    :param folder_name_to_id: 文件夹名称到ID的映射
     :param search_query: 当前搜索条件
     :return: 文件夹ID列表
     """
+    global folder_name_to_id, folder_id_to_name, folder_to_root
+    
     folder_ids = [
         folder_name_to_id.get(
             datetime.datetime.strptime(post["created_at"], '%Y-%m-%dT%H:%M:%S.%f%z').strftime('year_%Y')
@@ -124,6 +142,8 @@ def process_post(post: Dict, search_query: str) -> None:
     处理单个帖子
     :param post: 帖子数据
     """
+    global folder_name_to_id, folder_id_to_name, folder_to_root
+    
     try:
         image_url = post['file_url']
     except KeyError:
@@ -133,9 +153,6 @@ def process_post(post: Dict, search_query: str) -> None:
     print(f"Processing post {post['id']}")
     url = f"https://danbooru.donmai.us/posts/{post['id']}"
     
-    # 获取文件夹结构
-    folder_id_to_name, folder_name_to_id, folder_to_root = backend.get_folder_list_recursive()
-    
     # 处理各种标签
     copyrights, _ = process_tags(post["tag_string_copyright"])
     characters, _ = process_tags(post["tag_string_character"])
@@ -144,7 +161,7 @@ def process_post(post: Dict, search_query: str) -> None:
     count_tags, normal_tags = process_tags(post["tag_string_general"], COUNT_TAG_PATTERN)
     
     # 获取基础文件夹ID
-    folder_ids = get_folder_ids_for_post(post, folder_name_to_id, search_query)
+    folder_ids = get_folder_ids_for_post(post, search_query)
     
     # 处理并添加各类标签对应的文件夹
     tag_groups = [
@@ -158,10 +175,7 @@ def process_post(post: Dict, search_query: str) -> None:
     for folder_type, tags in tag_groups:
         for tag in tags:
             if tag:
-                create_folder_if_valid(tag, folder_type, folder_name_to_id)
-        
-        # 刷新文件夹映射
-        folder_id_to_name, folder_name_to_id, folder_to_root = backend.get_folder_list_recursive()
+                create_folder_if_valid(tag, folder_type)
         
         # 添加有效的文件夹ID
         for tag in tags:
@@ -180,6 +194,9 @@ def process_post(post: Dict, search_query: str) -> None:
     )
 
 def main():
+    # 初始化全局文件夹映射
+    update_folder_mappings()
+    
     unique_queries = list(set(Config.SEARCH_QUERYS))
     print(f"Processing queries: {unique_queries}")
     
