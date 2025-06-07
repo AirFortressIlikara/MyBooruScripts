@@ -36,9 +36,9 @@ class SynapForestAPI:
 
         try:
             if method.lower() == "get":
-                response = requests.get(url, params=params, headers=self.headers)
+                response = requests.get(url, params=params, headers=self.headers, proxies={'http': None, 'https': None})
             else:
-                response = requests.post(url, json=data, headers=self.headers)
+                response = requests.post(url, json=data, headers=self.headers, proxies={'http': None, 'https': None})
 
             if response.status_code == 200:
                 return response.json()
