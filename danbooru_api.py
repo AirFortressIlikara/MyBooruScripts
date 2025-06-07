@@ -1,13 +1,13 @@
 import datetime
 import os
 import re
-import time
 from typing import List, Dict, Optional
 
 from pybooru import Danbooru
 
 from lib.eagle_api import EagleAPI
 from lib.synap_forest_api import SynapForestAPI
+from danbooru_config import config  # 导入配置文件
 
 # 初始化API客户端
 # backend = EagleAPI()
@@ -16,8 +16,8 @@ backend = SynapForestAPI()
 # 配置常量
 class Config:
     SEARCH_QUERYS = ["order:rank"]  # 修改为你想要搜索的条件
-    USERNAME = 'YOUR_USERNAME'
-    API_KEY = 'YOUR_API_KEY'
+    USERNAME = config["danbooru"]["username"]
+    API_KEY = config["danbooru"]["api_key"]
     LIMIT_PER_PAGE = 50
     MAX_LIMIT = 50
 
@@ -33,7 +33,7 @@ RATING_MAP = {
 }
 
 # 正则表达式模式，用于匹配我们感兴趣的标签
-COUNT_TAG_PATTERN = re.compile(r'^\d+(girls?|boys?|others?)$|^multiple_(girls?|boys?|others?)$|^solo$')
+COUNT_TAG_PATTERN = re.compile(r'^\d+[\+]?(girls?|boys?|others?)$|^multiple_(girls?|boys?|others?)$|^solo$')
 
 # 全局变量
 folder_id_to_name = {}

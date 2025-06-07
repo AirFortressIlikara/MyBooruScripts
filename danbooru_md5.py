@@ -3,9 +3,15 @@ import hashlib
 from pybooru import Danbooru
 
 from lib import eagle_api
+from danbooru_config import config  # 导入配置文件
+
+# 配置常量
+class Config:
+    USERNAME = config["danbooru"]["username"]
+    API_KEY = config["danbooru"]["api_key"]
 
 # 初始化 Danbooru 客户端
-client = Danbooru('danbooru', username='YOUR_USERNAME', api_key='YOUR_API_KEY')
+client = Danbooru('danbooru', username=Config.USERNAME, api_key=Config.API_KEY)
 
 
 def calculate_md5(file_path):
