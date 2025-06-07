@@ -23,7 +23,7 @@ class ImageMetadataProcessor:
         }
         
         # 已知模型哈希
-        self.novelai_model_hashes = {"c1e1de52", "8ba2af87", "7bccaa2c", "bc59c602", "79f47848"}
+        self.novelai_model_hashes = {"c1e1de52", "8ba2af87", "7bccaa2c", "bc59c602", "79f47848", "7abffa2a"}
 
     def _get_folder_mappings(self) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
         """获取文件夹映射关系"""
