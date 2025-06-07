@@ -3,6 +3,8 @@ from typing import Dict, List, Optional, Tuple, Any
 
 
 class SynapForestAPI:
+    root_folder_id = "00000000-0000-0000-0000-000000000000"
+
     def __init__(self):
         """
         初始化 SynapForest API 客户端
@@ -99,7 +101,7 @@ class SynapForestAPI:
         if parent:
             data["parent"] = parent
         else:
-            data["parent"] = "00000000-0000-0000-0000-000000000000"
+            data["parent"] = self.root_folder_id
 
         result = self._make_request("post", "/api/folder/create", data=data)
         if result and result.get("status") == "success":
