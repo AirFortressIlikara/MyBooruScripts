@@ -1,22 +1,25 @@
 import datetime
 import os
 import re
+import time
 from typing import List, Dict, Optional
 
 from pybooru import Danbooru
 
 from lib.eagle_api import EagleAPI
+from lib.synap_forest_api import SynapForestAPI
 
 # 初始化API客户端
-eagle = EagleAPI()
+backend = EagleAPI()
+# backend = SynapForestAPI()
 
 # 配置常量
 class Config:
     SEARCH_QUERYS = ["order:rank"]  # 修改为你想要搜索的条件
     USERNAME = 'YOUR_USERNAME'
     API_KEY = 'YOUR_API_KEY'
-    LIMIT_PER_PAGE = 1
-    MAX_LIMIT = 1
+    LIMIT_PER_PAGE = 50
+    MAX_LIMIT = 50
 
 # 初始化客户端
 client = Danbooru('danbooru', username=Config.USERNAME, api_key=Config.API_KEY)
@@ -40,10 +43,13 @@ def create_folder_if_valid(category: str, folder_type: str,
     :param folder_type: 文件夹类型名称
     :param folder_name_to_id: 文件夹名称到ID的映射字典
     """
+    if folder_type not in folder_name_to_id:
+        backend.create_folder(folder_name=folder_type)
+
     if category and category not in folder_name_to_id:
         folder_type_id = folder_name_to_id.get(folder_type)
         if folder_type_id is not None:
-            eagle.create_folder(category, folder_type_id)
+            backend.create_folder(category, folder_type_id)
 
 def get_all_results(query: str, limit_per_page: int = Config.LIMIT_PER_PAGE, 
                     max_limit: int = Config.MAX_LIMIT) -> List[Dict]:
@@ -128,7 +134,7 @@ def process_post(post: Dict, search_query: str) -> None:
     url = f"https://danbooru.donmai.us/posts/{post['id']}"
     
     # 获取文件夹结构
-    folder_id_to_name, folder_name_to_id, folder_to_root = eagle.get_folder_list_recursive()
+    folder_id_to_name, folder_name_to_id, folder_to_root = backend.get_folder_list_recursive()
     
     # 处理各种标签
     copyrights, _ = process_tags(post["tag_string_copyright"])
@@ -155,7 +161,7 @@ def process_post(post: Dict, search_query: str) -> None:
                 create_folder_if_valid(tag, folder_type, folder_name_to_id)
         
         # 刷新文件夹映射
-        folder_id_to_name, folder_name_to_id, folder_to_root = eagle.get_folder_list_recursive()
+        folder_id_to_name, folder_name_to_id, folder_to_root = backend.get_folder_list_recursive()
         
         # 添加有效的文件夹ID
         for tag in tags:
@@ -163,7 +169,7 @@ def process_post(post: Dict, search_query: str) -> None:
                 folder_ids.append(folder_name_to_id[tag])
 
     # 添加图片到Eagle
-    eagle.add_from_url(
+    backend.add_from_url(
         image_url,
         os.path.basename(image_url),
         website=url,
@@ -183,10 +189,10 @@ def main():
         print(f"Total results fetched: {len(results)}")
         
         for post in results:
-            try:
+            # try:
                 process_post(post, search_query)
-            except Exception as e:
-                print(f"Error processing post {post.get('id', 'unknown')}: {e}")
+            # except Exception as e:
+            #     print(f"Error processing post {post.get('id', 'unknown')}: {e}")
 
 if __name__ == "__main__":
     main()
