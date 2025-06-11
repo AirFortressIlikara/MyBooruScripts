@@ -8,7 +8,7 @@ from lib.eagle_api import EagleAPI
 class ImageMetadataProcessor:
     def __init__(self):
         self.eagle = EagleAPI()
-        self.eagle_folder = Path("D:/AI Image.library/images/")
+        self.eagle_folder = Path("/mnt/d/AI Image.library/images/")
         self.artist_prefix = "artist:"
         
         # 支持的图像格式
@@ -23,7 +23,7 @@ class ImageMetadataProcessor:
         }
         
         # 已知模型哈希
-        self.novelai_model_hashes = {"c1e1de52", "8ba2af87", "7bccaa2c", "bc59c602", "79f47848", "7abffa2a"}
+        self.novelai_model_hashes = {"c1e1de52", "8ba2af87", "7bccaa2c", "bc59c602", "79f47848", "7abffa2a", "37442fca"}
 
     def _get_folder_mappings(self) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
         """获取文件夹映射关系"""
