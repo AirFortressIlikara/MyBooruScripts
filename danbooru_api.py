@@ -10,8 +10,9 @@ from lib.synap_forest_api import SynapForestAPI
 from danbooru_config import config  # 导入配置文件
 
 # 初始化API客户端
-# backend = EagleAPI()
-backend = SynapForestAPI()
+backend = EagleAPI()
+# backend = SynapForestAPI()
+
 
 # 配置常量
 class Config:
@@ -21,35 +22,38 @@ class Config:
     LIMIT_PER_PAGE = 50
     MAX_LIMIT = 50
 
+
 # 初始化客户端
-client = Danbooru('danbooru', username=Config.USERNAME, api_key=Config.API_KEY)
+client = Danbooru("danbooru", username=Config.USERNAME, api_key=Config.API_KEY)
 
 # 评分映射
-RATING_MAP = {
-    'e': 'explicit',
-    's': 'sensitive',
-    'g': 'general',
-    'q': 'questionable'
-}
+RATING_MAP = {"e": "explicit", "s": "sensitive", "g": "general", "q": "questionable"}
 
 # 正则表达式模式，用于匹配我们感兴趣的标签
-COUNT_TAG_PATTERN = re.compile(r'^\d+[\+]?(girls?|boys?|others?)$|^multiple_(girls?|boys?|others?)$|^solo$')
+COUNT_TAG_PATTERN = re.compile(
+    r"^\d+[\+]?(girls?|boys?|others?)$|^multiple_(girls?|boys?|others?)$|^solo$"
+)
 
 # 全局变量
 folder_id_to_name = {}
 folder_name_to_id = {}
 folder_to_root = {}
 
+
 def update_folder_mappings():
     """更新全局文件夹映射"""
     global folder_id_to_name, folder_name_to_id, folder_to_root
-    folder_id_to_name, folder_name_to_id, folder_to_root = backend.get_folder_list_recursive()
+    folder_id_to_name, folder_name_to_id, folder_to_root = (
+        backend.get_folder_list_recursive()
+    )
+
 
 def add_folder_mappings(name: str, id: str, root_id: str):
     global folder_id_to_name, folder_name_to_id, folder_to_root
     folder_name_to_id[name] = id
     folder_id_to_name[id] = name
     folder_to_root[id] = root_id
+
 
 def create_folder_if_valid(category: str, folder_type: str) -> None:
     """
@@ -58,7 +62,7 @@ def create_folder_if_valid(category: str, folder_type: str) -> None:
     :param folder_type: 文件夹类型名称
     """
     global folder_name_to_id, folder_id_to_name, folder_to_root
-    
+
     if folder_type not in folder_name_to_id:
         new_id = backend.create_folder(folder_name=folder_type)
         add_folder_mappings(folder_type, new_id, new_id)
@@ -69,8 +73,12 @@ def create_folder_if_valid(category: str, folder_type: str) -> None:
             new_id = backend.create_folder(category, folder_type_id)
             add_folder_mappings(category, new_id, folder_to_root[folder_type_id])
 
-def get_all_results(query: str, limit_per_page: int = Config.LIMIT_PER_PAGE, 
-                    max_limit: int = Config.MAX_LIMIT) -> List[Dict]:
+
+def get_all_results(
+    query: str,
+    limit_per_page: int = Config.LIMIT_PER_PAGE,
+    max_limit: int = Config.MAX_LIMIT,
+) -> List[Dict]:
     """
     获取所有符合查询条件的结果
     :param query: 搜索查询
@@ -86,7 +94,7 @@ def get_all_results(query: str, limit_per_page: int = Config.LIMIT_PER_PAGE,
             results = client.post_list(tags=query, page=page, limit=limit_per_page)
             if not results:
                 break
-                
+
             all_results.extend(results)
             print(f"Fetched {len(results)} results from page {page}")
             page += 1
@@ -96,6 +104,7 @@ def get_all_results(query: str, limit_per_page: int = Config.LIMIT_PER_PAGE,
 
     return all_results
 
+
 def process_tags(tag_string: str, pattern: re.Pattern = None) -> tuple:
     """
     处理标签字符串
@@ -103,12 +112,13 @@ def process_tags(tag_string: str, pattern: re.Pattern = None) -> tuple:
     :param pattern: 正则表达式模式
     :return: (匹配的标签列表, 剩余的标签列表)
     """
-    tags = tag_string.split(' ') if tag_string else []
+    tags = tag_string.split(" ") if tag_string else []
     if pattern:
         matched = [tag for tag in tags if pattern.match(tag)]
         remaining = [tag for tag in tags if not pattern.match(tag)]
         return matched, remaining
     return tags, []
+
 
 def get_folder_ids_for_post(post: Dict, search_query: str) -> List[Optional[int]]:
     """
@@ -118,24 +128,27 @@ def get_folder_ids_for_post(post: Dict, search_query: str) -> List[Optional[int]
     :return: 文件夹ID列表
     """
     global folder_name_to_id, folder_id_to_name, folder_to_root
-    
+
     folder_ids = [
         folder_name_to_id.get(
-            datetime.datetime.strptime(post["created_at"], '%Y-%m-%dT%H:%M:%S.%f%z').strftime('year_%Y')
+            datetime.datetime.strptime(
+                post["created_at"], "%Y-%m-%dT%H:%M:%S.%f%z"
+            ).strftime("year_%Y")
         ),
         folder_name_to_id.get("Manual"),
         folder_name_to_id.get("FromDanbooru"),
-        folder_name_to_id.get(RATING_MAP[post["rating"]])
+        folder_name_to_id.get(RATING_MAP[post["rating"]]),
     ]
-    
+
     # 只有当搜索条件包含order:rank时才添加DanbooruHot文件夹
     if "order:rank" in search_query.lower():
         danbooru_hot_id = folder_name_to_id.get("DanbooruHot")
         if danbooru_hot_id:
             folder_ids.append(danbooru_hot_id)
-    
+
     # 过滤掉None值
     return [fid for fid in folder_ids if fid is not None]
+
 
 def process_post(post: Dict, search_query: str) -> None:
     """
@@ -143,40 +156,42 @@ def process_post(post: Dict, search_query: str) -> None:
     :param post: 帖子数据
     """
     global folder_name_to_id, folder_id_to_name, folder_to_root
-    
+
     try:
-        image_url = post['file_url']
+        image_url = post["file_url"]
     except KeyError:
         print(f"Post {post.get('id', 'unknown')} has no file_url, skipping...")
         return
 
     print(f"Processing post {post['id']}")
     url = f"https://danbooru.donmai.us/posts/{post['id']}"
-    
+
     # 处理各种标签
     copyrights, _ = process_tags(post["tag_string_copyright"])
     characters, _ = process_tags(post["tag_string_character"])
     artists, _ = process_tags(post["tag_string_artist"])
     all_metadata, _ = process_tags(post["tag_string_meta"])
-    count_tags, normal_tags = process_tags(post["tag_string_general"], COUNT_TAG_PATTERN)
-    
+    count_tags, normal_tags = process_tags(
+        post["tag_string_general"], COUNT_TAG_PATTERN
+    )
+
     # 获取基础文件夹ID
     folder_ids = get_folder_ids_for_post(post, search_query)
-    
+
     # 处理并添加各类标签对应的文件夹
     tag_groups = [
         ("Count", count_tags),
         ("Artist", artists),
         ("CopyrightNew", copyrights),
         (copyrights[0] if copyrights else "CharacterNew", characters),
-        ("metadata", all_metadata)
+        ("metadata", all_metadata),
     ]
-    
+
     for folder_type, tags in tag_groups:
         for tag in tags:
             if tag:
                 create_folder_if_valid(tag, folder_type)
-        
+
         # 添加有效的文件夹ID
         for tag in tags:
             if tag and tag in folder_name_to_id:
@@ -190,26 +205,28 @@ def process_post(post: Dict, search_query: str) -> None:
         tags=normal_tags,
         annotation=None,
         modificationTime=None,
-        folderIds=folder_ids if folder_ids else [None]
+        folderIds=folder_ids if folder_ids else [None],
     )
+
 
 def main():
     # 初始化全局文件夹映射
     update_folder_mappings()
-    
+
     unique_queries = list(set(Config.SEARCH_QUERYS))
     print(f"Processing queries: {unique_queries}")
-    
+
     for search_query in unique_queries:
         print(f"\nStarting processing for query: '{search_query}'")
         results = get_all_results(search_query, max_limit=Config.MAX_LIMIT)
         print(f"Total results fetched: {len(results)}")
-        
+
         for post in results:
             # try:
-                process_post(post, search_query)
-            # except Exception as e:
-            #     print(f"Error processing post {post.get('id', 'unknown')}: {e}")
+            process_post(post, search_query)
+        # except Exception as e:
+        #     print(f"Error processing post {post.get('id', 'unknown')}: {e}")
+
 
 if __name__ == "__main__":
     main()
