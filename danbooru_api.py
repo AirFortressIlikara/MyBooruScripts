@@ -9,39 +9,57 @@ from lib.eagle_api import EagleAPI
 from lib.synap_forest_api import SynapForestAPI
 from danbooru_config import config  # 导入配置文件
 
-# 初始化API客户端
+
+# ======================================
+#           初始化与配置
+# ======================================
 backend = EagleAPI()
-# backend = SynapForestAPI()
+# backend = SynapForestAPI()  # 若使用 SynapForest，可替换上行
 
 
-# 配置常量
 class Config:
-    SEARCH_QUERYS = ["order:rank"]  # 修改为你想要搜索的条件
+    """
+    全局配置常量类。
+    用于集中管理查询条件、账户信息、分页设置等。
+    """
+
+    SEARCH_QUERYS = [
+        "suzuran_(arknights)",
+        "suzuran_(arknights) mizuki_(arknights)",
+    ]  # 修改为你想要搜索的条件
     USERNAME = config["danbooru"]["username"]
     API_KEY = config["danbooru"]["api_key"]
-    LIMIT_PER_PAGE = 50
-    MAX_LIMIT = 50
+    LIMIT_PER_PAGE = 50  # 每页请求数量(Danbooru API 最大 100)
+    MAX_LIMIT = 50  # 每次查询最大总数量
 
 
-# 初始化客户端
+# 初始化 Danbooru 客户端
 client = Danbooru("danbooru", username=Config.USERNAME, api_key=Config.API_KEY)
 
 # 评分映射
 RATING_MAP = {"e": "explicit", "s": "sensitive", "g": "general", "q": "questionable"}
 
-# 正则表达式模式，用于匹配我们感兴趣的标签
+# 正则: 匹配特定人物数量标签，如 “2girls” / “multiple_boys” / “solo”
 COUNT_TAG_PATTERN = re.compile(
     r"^\d+[\+]?(girls?|boys?|others?)$|^multiple_(girls?|boys?|others?)$|^solo$"
 )
 
-# 全局变量
+# 正则: 提取 Danbooru 图片 URL 中的 ID
+DANBOORU_ID_PATTERN = re.compile(r"https://danbooru\.donmai\.us/posts/(\d+)")
+
+# 全局文件夹映射缓存
 folder_id_to_name = {}
 folder_name_to_id = {}
 folder_to_root = {}
 
 
+# ======================================
+#         文件夹映射与创建逻辑
+# ======================================
 def update_folder_mappings():
-    """更新全局文件夹映射"""
+    """
+    更新全局文件夹映射
+    """
     global folder_id_to_name, folder_name_to_id, folder_to_root
     folder_id_to_name, folder_name_to_id, folder_to_root = (
         backend.get_folder_list_recursive()
@@ -49,6 +67,9 @@ def update_folder_mappings():
 
 
 def add_folder_mappings(name: str, id: str, root_id: str):
+    """
+    更新本地文件夹映射表。
+    """
     global folder_id_to_name, folder_name_to_id, folder_to_root
     folder_name_to_id[name] = id
     folder_id_to_name[id] = name
@@ -57,16 +78,19 @@ def add_folder_mappings(name: str, id: str, root_id: str):
 
 def create_folder_if_valid(category: str, folder_type: str) -> None:
     """
-    创建文件夹的辅助函数，如果文件夹类型和类别有效则创建
+    创建文件夹(如果不存在)。
+    自动在指定的“类型文件夹”下创建“类别子文件夹”。
     :param category: 文件夹类别
     :param folder_type: 文件夹类型名称
     """
     global folder_name_to_id, folder_id_to_name, folder_to_root
 
+    # 创建顶级类型文件夹
     if folder_type not in folder_name_to_id:
         new_id = backend.create_folder(folder_name=folder_type)
         add_folder_mappings(folder_type, new_id, new_id)
 
+    # 创建类别文件夹
     if category and category not in folder_name_to_id:
         folder_type_id = folder_name_to_id.get(folder_type)
         if folder_type_id is not None:
@@ -74,13 +98,17 @@ def create_folder_if_valid(category: str, folder_type: str) -> None:
             add_folder_mappings(category, new_id, folder_to_root[folder_type_id])
 
 
+# ======================================
+#         获取 Danbooru 搜索结果
+# ======================================
 def get_all_results(
     query: str,
     limit_per_page: int = Config.LIMIT_PER_PAGE,
     max_limit: int = Config.MAX_LIMIT,
 ) -> List[Dict]:
     """
-    获取所有符合查询条件的结果
+    分页获取 Danbooru 搜索结果。
+    自动分页直至达到 max_limit 或无更多结果。
     :param query: 搜索查询
     :param limit_per_page: 每页限制
     :param max_limit: 最大结果限制
@@ -94,23 +122,25 @@ def get_all_results(
             results = client.post_list(tags=query, page=page, limit=limit_per_page)
             if not results:
                 break
-
             all_results.extend(results)
-            print(f"Fetched {len(results)} results from page {page}")
+            print(f"[Danbooru] Page {page}: fetched {len(results)} results.")
             page += 1
         except Exception as e:
-            print(f"Error fetching data for query '{query}' on page {page}: {e}")
+            print(f"[Error] Fetching '{query}' page {page} failed: {e}")
             break
 
     return all_results
 
 
+# ======================================
+#               标签处理
+# ======================================
 def process_tags(tag_string: str, pattern: re.Pattern = None) -> tuple:
     """
-    处理标签字符串
-    :param tag_string: 标签字符串
-    :param pattern: 正则表达式模式
-    :return: (匹配的标签列表, 剩余的标签列表)
+    将标签字符串拆分为列表，并根据正则过滤。
+    :param tag_string: 以空格分隔的标签字符串
+    :param pattern: 匹配模式(可选)
+    :return: (匹配的标签列表, 未匹配的标签列表)
     """
     tags = tag_string.split(" ") if tag_string else []
     if pattern:
@@ -120,53 +150,71 @@ def process_tags(tag_string: str, pattern: re.Pattern = None) -> tuple:
     return tags, []
 
 
+# ======================================
+#         文件夹 ID 归类逻辑
+# ======================================
 def get_folder_ids_for_post(post: Dict, search_query: str) -> List[Optional[int]]:
     """
-    获取帖子对应的所有文件夹ID
+    根据帖子属性(时间、评分、搜索条件)确定初始文件夹 ID
     :param post: 帖子数据
     :param search_query: 当前搜索条件
     :return: 文件夹ID列表
     """
-    global folder_name_to_id, folder_id_to_name, folder_to_root
+    folder_ids = []
 
-    folder_ids = [
-        folder_name_to_id.get(
-            datetime.datetime.strptime(
-                post["created_at"], "%Y-%m-%dT%H:%M:%S.%f%z"
-            ).strftime("year_%Y")
-        ),
-        folder_name_to_id.get("Manual"),
-        folder_name_to_id.get("FromDanbooru"),
-        folder_name_to_id.get(RATING_MAP[post["rating"]]),
-    ]
+    # 日期解析(兼容多种时间格式)
+    try:
+        created_at = datetime.datetime.strptime(
+            post["created_at"], "%Y-%m-%dT%H:%M:%S.%f%z"
+        )
+    except ValueError:
+        created_at = datetime.datetime.strptime(
+            post["created_at"], "%Y-%m-%dT%H:%M:%S%z"
+        )
 
-    # 只有当搜索条件包含order:rank时才添加DanbooruHot文件夹
+    # 常规归类文件夹
+    folder_ids.extend(
+        [
+            folder_name_to_id.get(created_at.strftime("year_%Y")),
+            folder_name_to_id.get("Manual"),
+            folder_name_to_id.get("FromDanbooru"),
+            folder_name_to_id.get(RATING_MAP.get(post["rating"], "general")),
+        ]
+    )
+
+    # 特殊归类: 热门榜单
     if "order:rank" in search_query.lower():
-        danbooru_hot_id = folder_name_to_id.get("DanbooruHot")
-        if danbooru_hot_id:
-            folder_ids.append(danbooru_hot_id)
+        hot_id = folder_name_to_id.get("DanbooruHot")
+        if hot_id:
+            folder_ids.append(hot_id)
 
-    # 过滤掉None值
     return [fid for fid in folder_ids if fid is not None]
 
 
-def process_post(post: Dict, search_query: str) -> None:
+# ======================================
+#           处理单个帖子
+# ======================================
+def process_post(post: Dict, search_query: str, existing_ids: set) -> None:
     """
-    处理单个帖子
+    处理单个 Danbooru 帖子:
+    - 解析标签
+    - 动态创建文件夹
+    - 上传图片到 Eagle
+    - 更新已存在 ID 集合
     :param post: 帖子数据
     """
-    global folder_name_to_id, folder_id_to_name, folder_to_root
-
     try:
         image_url = post["file_url"]
     except KeyError:
-        print(f"Post {post.get('id', 'unknown')} has no file_url, skipping...")
+        print(f"[Skip] Post {post.get('id', 'unknown')} has no file_url.")
         return
 
-    print(f"Processing post {post['id']}")
-    url = f"https://danbooru.donmai.us/posts/{post['id']}"
+    post_id = post["id"]
+    print(f"[Process] Post {post_id}")
 
-    # 处理各种标签
+    url = f"https://danbooru.donmai.us/posts/{post_id}"
+
+    # 标签分类解析
     copyrights, _ = process_tags(post["tag_string_copyright"])
     characters, _ = process_tags(post["tag_string_character"])
     artists, _ = process_tags(post["tag_string_artist"])
@@ -175,10 +223,10 @@ def process_post(post: Dict, search_query: str) -> None:
         post["tag_string_general"], COUNT_TAG_PATTERN
     )
 
-    # 获取基础文件夹ID
-    folder_ids = get_folder_ids_for_post(post, search_query)
+    # 文件夹集合
+    folder_ids = set(get_folder_ids_for_post(post, search_query))
 
-    # 处理并添加各类标签对应的文件夹
+    # 根据标签创建/映射文件夹
     tag_groups = [
         ("Count", count_tags),
         ("Artist", artists),
@@ -189,15 +237,13 @@ def process_post(post: Dict, search_query: str) -> None:
 
     for folder_type, tags in tag_groups:
         for tag in tags:
-            if tag:
-                create_folder_if_valid(tag, folder_type)
+            if not tag:
+                continue
+            create_folder_if_valid(tag, folder_type)
+            if tag in folder_name_to_id:
+                folder_ids.add(folder_name_to_id[tag])
 
-        # 添加有效的文件夹ID
-        for tag in tags:
-            if tag and tag in folder_name_to_id:
-                folder_ids.append(folder_name_to_id[tag])
-
-    # 添加图片到Eagle
+    # 上传图片
     backend.add_from_url(
         image_url,
         os.path.basename(image_url),
@@ -205,27 +251,62 @@ def process_post(post: Dict, search_query: str) -> None:
         tags=normal_tags,
         annotation=None,
         modificationTime=None,
-        folderIds=folder_ids if folder_ids else [None],
+        folderIds=list(folder_ids) if folder_ids else None,
     )
 
 
+# ======================================
+#        从 Eagle 获取已有 Danbooru ID
+# ======================================
+def get_existing_danbooru_ids() -> set:
+    """
+    从 Eagle 获取现有条目，提取已存在的 Danbooru ID 集合。
+    """
+    existing_items = backend.get_items()
+    danbooru_ids = set()
+
+    for item in existing_items:
+        url = item.get("url", "")
+        match = DANBOORU_ID_PATTERN.match(url)
+        if match:
+            danbooru_ids.add(int(match.group(1)))
+
+    print(f"[Info] 已存在 {len(danbooru_ids)} 个 Danbooru 条目。")
+    return danbooru_ids
+
+
+# ======================================
+#              主程序入口
+# ======================================
 def main():
-    # 初始化全局文件夹映射
+    """
+    主执行逻辑:
+    - 同步 Eagle 文件夹结构
+    - 读取已存在条目
+    - 执行 Danbooru 查询
+    - 下载并导入图片(跳过重复)
+    """
     update_folder_mappings()
+    existing_ids = get_existing_danbooru_ids()
 
     unique_queries = list(set(Config.SEARCH_QUERYS))
-    print(f"Processing queries: {unique_queries}")
+    print(f"[Start] Processing queries: {unique_queries}")
 
     for search_query in unique_queries:
-        print(f"\nStarting processing for query: '{search_query}'")
+        print(f"\n[Query] '{search_query}' 开始处理...")
         results = get_all_results(search_query, max_limit=Config.MAX_LIMIT)
-        print(f"Total results fetched: {len(results)}")
+        print(f"[Query] 共获取 {len(results)} 条结果。")
 
         for post in results:
-            # try:
-            process_post(post, search_query)
-        # except Exception as e:
-        #     print(f"Error processing post {post.get('id', 'unknown')}: {e}")
+            post_id = post.get("id")
+            if post_id in existing_ids:
+                print(f"[Skip] Duplicate post {post_id}")
+                continue
+            process_post(post, search_query, existing_ids)
+
+            # 动态维护已存在ID
+            existing_ids.add(post_id)
+            print(f"[Added] Post {post_id} added successfully.")
 
 
 if __name__ == "__main__":
