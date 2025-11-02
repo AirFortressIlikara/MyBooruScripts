@@ -4,7 +4,6 @@ import re
 from typing import List, Dict, Optional
 
 from pybooru import Danbooru
-
 from lib.eagle_api import EagleAPI
 from lib.synap_forest_api import SynapForestAPI
 from danbooru_config import config  # 导入配置文件
@@ -23,10 +22,7 @@ class Config:
     用于集中管理查询条件、账户信息、分页设置等。
     """
 
-    SEARCH_QUERYS = [
-        "suzuran_(arknights)",
-        "suzuran_(arknights) mizuki_(arknights)",
-    ]  # 修改为你想要搜索的条件
+    SEARCH_QUERYS = ["order:rank"]  # 支持多标签与反选（-tag）
     USERNAME = config["danbooru"]["username"]
     API_KEY = config["danbooru"]["api_key"]
     LIMIT_PER_PAGE = 50  # 每页请求数量(Danbooru API 最大 100)
@@ -99,37 +95,104 @@ def create_folder_if_valid(category: str, folder_type: str) -> None:
 
 
 # ======================================
-#         获取 Danbooru 搜索结果
+#           查询与过滤逻辑
 # ======================================
+def parse_query(query: str) -> tuple[list[str], list[str]]:
+    """
+    解析搜索字符串为包含与排除标签。
+    示例: "girl smile -blush -solo" -> (["girl", "smile"], ["blush", "solo"])
+    """
+    include_tags, exclude_tags = [], []
+    for tag in query.split():
+        tag = tag.strip()
+        if not tag:
+            continue
+        if tag.startswith("-"):
+            exclude_tags.append(tag[1:])
+        else:
+            include_tags.append(tag)
+    return include_tags, exclude_tags
+
+
 def get_all_results(
     query: str,
     limit_per_page: int = Config.LIMIT_PER_PAGE,
     max_limit: int = Config.MAX_LIMIT,
 ) -> List[Dict]:
     """
-    分页获取 Danbooru 搜索结果。
-    自动分页直至达到 max_limit 或无更多结果。
-    :param query: 搜索查询
-    :param limit_per_page: 每页限制
-    :param max_limit: 最大结果限制
-    :return: 结果列表
+    分页获取 Danbooru 搜索结果，支持多标签本地筛选与反选。
     """
+    include_tags, exclude_tags = parse_query(query)
+
+    # API 仅支持两个标签
+    api_tags = " ".join(include_tags[:2]) if include_tags else ""
+    print(
+        f"[Danbooru] API 查询: {api_tags} | 本地过滤: {include_tags[2:]} - {exclude_tags}"
+    )
+
     all_results = []
     page = 1
 
     while len(all_results) < max_limit:
         try:
-            results = client.post_list(tags=query, page=page, limit=limit_per_page)
+            results = client.post_list(tags=api_tags, page=page, limit=limit_per_page)
             if not results:
                 break
             all_results.extend(results)
             print(f"[Danbooru] Page {page}: fetched {len(results)} results.")
             page += 1
         except Exception as e:
-            print(f"[Error] Fetching '{query}' page {page} failed: {e}")
+            print(f"[Error] Fetching '{api_tags}' page {page} failed: {e}")
             break
 
-    return all_results
+    print(f"[Danbooru] Total {len(all_results)} results before filtering.")
+    return filter_local_posts(all_results, include_tags[2:], exclude_tags)
+
+
+def filter_local_posts(
+    posts: List[Dict], include_tags: List[str], exclude_tags: List[str]
+) -> List[Dict]:
+    """
+    本地标签筛选逻辑:
+    - 必须包含所有 include_tags
+    - 必须不包含任何 exclude_tags
+    """
+
+    def get_all_tags(post):
+        """提取该作品的所有标签（包括 general、character、artist、copyright）"""
+        tags = set()
+        for key in [
+            "tag_string_general",
+            "tag_string_character",
+            "tag_string_copyright",
+            "tag_string_artist",
+            "tag_string_meta",
+        ]:
+            tags.update(tag.lower() for tag in post.get(key, "").split())
+        return tags
+
+    filtered = []
+    for i, post in enumerate(posts):
+        tags = get_all_tags(post)
+        if i < 3:
+            print(f"DEBUG Post {i}: tags={list(tags)[:10]}...")  # 打印前3个的标签
+
+        # 包含判断
+        missing = [t for t in include_tags if t not in tags]
+        if missing:
+            print(f"DEBUG Filtered out (missing tags): {missing}")
+            continue
+
+        # 排除判断
+        blocked = [t for t in exclude_tags if t in tags]
+        if blocked:
+            print(f"DEBUG Filtered out (excluded tags): {blocked}")
+            continue
+
+        filtered.append(post)
+
+    print(f"[Filter] After local filter: {len(filtered)} / {len(posts)} remain.")
+    return filtered
 
 
 # ======================================
